@@ -1,13 +1,12 @@
 // app/page.tsx
-'use client';
+"use client";
 
-import { useState } from 'react';
-import dynamic from 'next/dynamic';
+import { useState } from "react";
+import dynamic from "next/dynamic";
 
-const QrCodeScanner = dynamic(
-  () => import('../components/QrCodeScanner'),
-  { ssr: false }
-);
+const QrCodeScanner = dynamic(() => import("../components/QrCodeScanner"), {
+  ssr: false,
+});
 
 export default function BarcodeScanner() {
   const [scanResult, setScanResult] = useState<string | null>(null);
@@ -19,13 +18,14 @@ export default function BarcodeScanner() {
   };
 
   const handleScanError = (error: string) => {
-    setError(error);
+    console.error("QR Scan Error:", error);
+    setError(`Scan error: ${error}. Please try again.`);
   };
 
   return (
     <div className="container mx-auto p-4">
       <h1 className="text-2xl font-bold mb-4">QR Code Scanner</h1>
-      
+
       {error && (
         <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">
           {error}
@@ -33,7 +33,7 @@ export default function BarcodeScanner() {
       )}
 
       <div className="mb-4">
-        <QrCodeScanner 
+        <QrCodeScanner
           onScanSuccess={handleScanSuccess}
           onScanError={handleScanError}
         />
