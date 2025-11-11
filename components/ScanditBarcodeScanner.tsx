@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   DataCaptureContext,
   Camera,
@@ -23,6 +23,7 @@ export default function ScanditBarcodeScanner({
 }: ScanditBarcodeScannerProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<any>(null);
+  const [scannedValue, setScannedValue] = useState<string | null>(null);
   const licenseKey = process.env.NEXT_PUBLIC_SCANDIT_LICENSE_KEY;
   if (!licenseKey) {
     throw new Error(
@@ -30,11 +31,13 @@ export default function ScanditBarcodeScanner({
     );
   }
 
+  const initializeScanner = useRef<(() => Promise<void>) | null>(null);
+
   useEffect(() => {
     let context: DataCaptureContext | null = null;
     let barcodeCapture: BarcodeCapture | null = null;
 
-    const initializeScanner = async () => {
+    const initScanner = async () => {
       try {
         // Initialize the SDK
         context = await DataCaptureContext.forLicenseKey(licenseKey, {
@@ -61,8 +64,15 @@ export default function ScanditBarcodeScanner({
         barcodeCapture.addListener({
           didScan: async (barcodeCaptureMode, session) => {
             const barcode = session.newlyRecognizedBarcode;
-            if (barcode && barcode.data) {
+            if (barcode && barcode.data && !scannedValue) {
+              setScannedValue(barcode.data);
               onScanSuccess(barcode.data);
+              
+              // Stop the camera after successful scan
+              const camera = context?.frameSource;
+              if (camera) {
+                await camera.switchToDesiredState(FrameSourceState.Off);
+              }
             }
           },
         });
@@ -90,7 +100,8 @@ export default function ScanditBarcodeScanner({
       }
     };
 
-    initializeScanner();
+    initializeScanner.current = initScanner;
+    initScanner();
 
     // Cleanup function
     return () => {
@@ -101,7 +112,51 @@ export default function ScanditBarcodeScanner({
         viewRef.current.dispose();
       }
     };
-  }, [onScanSuccess, onError]);
+  }, [onScanSuccess, onError, licenseKey, scannedValue]);
 
-  return <div ref={containerRef} style={{ width: "100%", height: "500px" }} />;
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+      {scannedValue ? (
+        <div style={{ 
+          padding: '1rem', 
+          backgroundColor: '#f0f0f0', 
+          borderRadius: '4px',
+          textAlign: 'center',
+          fontSize: '1.2rem'
+        }}>
+          Scanned: <strong>{scannedValue}</strong>
+        </div>
+      ) : (
+        <div ref={containerRef} style={{ width: "100%", height: "500px" }} />
+      )}
+      {scannedValue && (
+        <button 
+          onClick={() => {
+            setScannedValue(null);
+            // Re-initialize the scanner
+            if (containerRef.current) {
+              const view = viewRef.current;
+              if (view) {
+                view.dispose();
+              }
+              if (initializeScanner.current) {
+                initializeScanner.current();
+              }
+            }
+          }}
+          style={{
+            padding: '0.5rem 1rem',
+            backgroundColor: '#007bff',
+            color: 'white',
+            border: 'none',
+            borderRadius: '4px',
+            cursor: 'pointer',
+            fontSize: '1rem'
+          }}
+        >
+          Scan Again
+        </button>
+      )}
+    </div>
+  );
 }
