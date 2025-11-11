@@ -67,7 +67,7 @@ export default function ScanditBarcodeScanner({
             if (barcode && barcode.data && !scannedValue) {
               setScannedValue(barcode.data);
               onScanSuccess(barcode.data);
-              
+
               // Stop the camera after successful scan
               const camera = context?.frameSource;
               if (camera) {
@@ -105,38 +105,51 @@ export default function ScanditBarcodeScanner({
 
     // Cleanup function
     return () => {
-      if (context) {
-        context.dispose();
-      }
-      if (viewRef.current) {
-        viewRef.current.dispose();
+      try {
+        // First dispose the context which should handle cleaning up its children
+        if (context) {
+          context.dispose();
+        }
+
+        // Then clean up the view if it exists and has a dispose method
+        const view = viewRef.current;
+        if (view && typeof view.dispose === "function") {
+          view.dispose();
+        } else if (view && typeof view.removeAllViews === "function") {
+          // Alternative cleanup method
+          view.removeAllViews();
+        }
+      } catch (error) {
+        console.error("Error during cleanup:", error);
       }
     };
   }, [onScanSuccess, onError, licenseKey, scannedValue]);
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+    <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
       {scannedValue ? (
-        <div style={{ 
-          padding: '1rem', 
-          backgroundColor: '#f0f0f0', 
-          borderRadius: '4px',
-          textAlign: 'center',
-          fontSize: '1.2rem'
-        }}>
+        <div
+          style={{
+            padding: "1rem",
+            backgroundColor: "#f0f0f0",
+            borderRadius: "4px",
+            textAlign: "center",
+            fontSize: "1.2rem",
+          }}
+        >
           Scanned: <strong>{scannedValue}</strong>
         </div>
       ) : (
         <div ref={containerRef} style={{ width: "100%", height: "500px" }} />
       )}
       {scannedValue && (
-        <button 
+        <button
           onClick={() => {
             setScannedValue(null);
             // Re-initialize the scanner
             if (containerRef.current) {
               const view = viewRef.current;
-              if (view) {
+              if (view && typeof view.dispose === "function") {
                 view.dispose();
               }
               if (initializeScanner.current) {
@@ -145,13 +158,13 @@ export default function ScanditBarcodeScanner({
             }
           }}
           style={{
-            padding: '0.5rem 1rem',
-            backgroundColor: '#007bff',
-            color: 'white',
-            border: 'none',
-            borderRadius: '4px',
-            cursor: 'pointer',
-            fontSize: '1rem'
+            padding: "0.5rem 1rem",
+            backgroundColor: "#007bff",
+            color: "white",
+            border: "none",
+            borderRadius: "4px",
+            cursor: "pointer",
+            fontSize: "1rem",
           }}
         >
           Scan Again
