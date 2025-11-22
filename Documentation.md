@@ -1,4 +1,6 @@
 Get Started
+npm install @scandit/web-datacapture-barcode @scandit/web-datacapture-core
+
 In this guide you will learn step-by-step how to add SparkScan to your application. The general steps are:
 
 Create a new Data Capture Context instance.
