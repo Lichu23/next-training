@@ -141,56 +141,6 @@ const NativeBarcodeScanner: React.FC = () => {
   const streamRef = useRef<MediaStream | null>(null);
   const animationRef = useRef<number | null>(null);
 
-  // Simple barcode detection using image analysis
-  const detectBarcode = (imageData: ImageData): string | null => {
-    const { data, width, height } = imageData;
-    
-    // Sample the middle horizontal line of the image
-    const middleY: number = Math.floor(height / 2);
-    const scanLine: number[] = [];
-    
-    // Convert to grayscale and get pixel values
-    for (let x = 0; x < width; x++) {
-      const index: number = (middleY * width + x) * 4;
-      const r: number = data[index];
-      const g: number = data[index + 1];
-      const b: number = data[index + 2];
-      const gray: number = (r + g + b) / 3;
-      scanLine.push(gray);
-    }
-    
-    // Find bars (dark and light patterns)
-    const threshold: number = 128;
-    const bars: Bar[] = [];
-    let currentBar: Bar = { color: scanLine[0] < threshold ? 'black' : 'white', width: 1 };
-    
-    for (let i = 1; i < scanLine.length; i++) {
-      const currentColor: 'black' | 'white' = scanLine[i] < threshold ? 'black' : 'white';
-      
-      if (currentColor === currentBar.color) {
-        currentBar.width++;
-      } else {
-        bars.push(currentBar);
-        currentBar = { color: currentColor, width: 1 };
-      }
-    }
-    bars.push(currentBar);
-    
-    // Check if we have a valid barcode pattern (alternating black/white bars)
-    if (bars.length < 20) return null; // Too few bars
-    
-    // Normalize bar widths (find the smallest bar width as unit)
-    const minWidth: number = Math.min(...bars.map(b => b.width));
-    const normalizedBars: NormalizedBar[] = bars.map(b => ({
-      color: b.color,
-      units: Math.round(b.width / minWidth)
-    }));
-    
-    // Try to decode as Code 128 or Code 39 pattern
-    const code: string | null = decodeBarPattern(normalizedBars);
-    return code;
-  };
-
   // Simple pattern matching for common barcodes
   const decodeBarPattern = (bars: NormalizedBar[]): string | null => {
     // This is a simplified decoder - in reality, you'd need full implementations
@@ -253,24 +203,23 @@ const NativeBarcodeScanner: React.FC = () => {
       // Draw current video frame to canvas
       ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
 
-      // Draw scan line indicator
-      ctx.strokeStyle = '#00ff00';
-      ctx.lineWidth = 2;
-      ctx.beginPath();
-      ctx.moveTo(0, canvas.height / 2);
-      ctx.lineTo(canvas.width, canvas.height / 2);
-      ctx.stroke();
-
       // Get image data from canvas
       const imageData: ImageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
 
-      // Try to detect barcode
-      const code: string | null = detectBarcode(imageData);
-      
-      if (code) {
-        setScannedCode(code);
-        stopScanning();
-        return;
+      // Try to detect barcode on multiple scan lines for better detection
+      const scanLines = [
+        Math.floor(canvas.height * 0.4),
+        Math.floor(canvas.height * 0.5),
+        Math.floor(canvas.height * 0.6)
+      ];
+
+      for (const scanY of scanLines) {
+        const code: string | null = detectBarcodeAtLine(imageData, scanY);
+        if (code) {
+          setScannedCode(code);
+          stopScanning();
+          return;
+        }
       }
     }
 
@@ -278,17 +227,70 @@ const NativeBarcodeScanner: React.FC = () => {
     animationRef.current = requestAnimationFrame(scanFrame);
   };
 
+  // Modified detection to work on specific scan line
+  const detectBarcodeAtLine = (imageData: ImageData, scanY: number): string | null => {
+    const { data, width } = imageData;
+    
+    const scanLine: number[] = [];
+    
+    // Convert to grayscale and get pixel values
+    for (let x = 0; x < width; x++) {
+      const index: number = (scanY * width + x) * 4;
+      const r: number = data[index];
+      const g: number = data[index + 1];
+      const b: number = data[index + 2];
+      const gray: number = (r + g + b) / 3;
+      scanLine.push(gray);
+    }
+    
+    // Find bars (dark and light patterns)
+    const threshold: number = 128;
+    const bars: Bar[] = [];
+    let currentBar: Bar = { color: scanLine[0] < threshold ? 'black' : 'white', width: 1 };
+    
+    for (let i = 1; i < scanLine.length; i++) {
+      const currentColor: 'black' | 'white' = scanLine[i] < threshold ? 'black' : 'white';
+      
+      if (currentColor === currentBar.color) {
+        currentBar.width++;
+      } else {
+        bars.push(currentBar);
+        currentBar = { color: currentColor, width: 1 };
+      }
+    }
+    bars.push(currentBar);
+    
+    // Check if we have a valid barcode pattern (alternating black/white bars)
+    if (bars.length < 15) return null; // Reduced threshold for better detection
+    
+    // Normalize bar widths (find the smallest bar width as unit)
+    const minWidth: number = Math.min(...bars.map(b => b.width));
+    const normalizedBars: NormalizedBar[] = bars.map(b => ({
+      color: b.color,
+      units: Math.round(b.width / minWidth)
+    }));
+    
+    // Try to decode pattern
+    const code: string | null = decodeBarPattern(normalizedBars);
+    return code;
+  };
+
   const startScanning = async (): Promise<void> => {
     try {
       setError('');
       setScannedCode('');
 
-      // Request camera access
+      // Request camera access with focus optimization
       const stream: MediaStream = await navigator.mediaDevices.getUserMedia({
         video: { 
           facingMode: 'environment',
-          width: { ideal: 1280 },
-          height: { ideal: 720 }
+          width: { ideal: 640 },  // Reduced for better focus
+          height: { ideal: 480 }, // Reduced for better focus
+          focusMode: 'continuous' as any,
+          advanced: [
+            { focusMode: 'continuous' } as any,
+            { focusDistance: { ideal: 0.3 } } as any // Focus at 30cm for barcodes
+          ]
         }
       });
 
@@ -296,7 +298,17 @@ const NativeBarcodeScanner: React.FC = () => {
 
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
-        videoRef.current.play();
+        await videoRef.current.play();
+
+        // Apply video track settings for better focus
+        const videoTrack = stream.getVideoTracks()[0];
+        const capabilities = videoTrack.getCapabilities() as any;
+        
+        if (capabilities.focusMode && capabilities.focusMode.includes('continuous')) {
+          await videoTrack.applyConstraints({
+            advanced: [{ focusMode: 'continuous' } as any]
+          });
+        }
       }
 
       setIsScanning(true);
@@ -304,7 +316,7 @@ const NativeBarcodeScanner: React.FC = () => {
       // Start scanning frames
       setTimeout(() => {
         animationRef.current = requestAnimationFrame(scanFrame);
-      }, 500);
+      }, 1000); // Increased delay to allow camera to focus
 
     } catch (err) {
       const error = err as Error;
@@ -418,17 +430,26 @@ const NativeBarcodeScanner: React.FC = () => {
         </div>
       )}
 
-      <div style={{ position: 'relative', backgroundColor: '#000', borderRadius: '8px', overflow: 'hidden' }}>
+      <div style={{ 
+        position: 'relative', 
+        backgroundColor: '#000', 
+        borderRadius: '8px', 
+        overflow: 'hidden',
+        maxWidth: '400px',
+        margin: '0 auto'
+      }}>
         <video
           ref={videoRef}
           style={{
             width: '100%',
-            maxHeight: '500px',
+            height: 'auto',
+            maxHeight: '300px',
             display: isScanning && !scannedCode ? 'block' : 'none',
             objectFit: 'cover'
           }}
           playsInline
           muted
+          autoPlay
         />
         <canvas
           ref={canvasRef}
@@ -441,6 +462,31 @@ const NativeBarcodeScanner: React.FC = () => {
             display: isScanning && !scannedCode ? 'block' : 'none'
           }}
         />
+        {isScanning && !scannedCode && (
+          <div style={{
+            position: 'absolute',
+            top: '50%',
+            left: '50%',
+            transform: 'translate(-50%, -50%)',
+            width: '80%',
+            height: '60px',
+            border: '3px solid #00ff00',
+            borderRadius: '8px',
+            pointerEvents: 'none',
+            boxShadow: '0 0 0 9999px rgba(0,0,0,0.5)'
+          }}>
+            <div style={{
+              position: 'absolute',
+              top: '50%',
+              left: '0',
+              right: '0',
+              height: '2px',
+              backgroundColor: '#00ff00',
+              transform: 'translateY(-50%)',
+              animation: 'scan 2s ease-in-out infinite'
+            }} />
+          </div>
+        )}
         {!isScanning && !scannedCode && (
           <div style={{
             padding: '60px 20px',
@@ -448,21 +494,33 @@ const NativeBarcodeScanner: React.FC = () => {
             color: '#999',
             backgroundColor: '#1a1a1a'
           }}>
-            <p style={{ fontSize: '18px' }}>Click Start Scanner to begin</p>
+            <p style={{ fontSize: '18px' }}>Click "Start Scanner" to begin</p>
           </div>
         )}
       </div>
 
+      <style>{`
+        @keyframes scan {
+          0%, 100% { top: 20%; }
+          50% { top: 80%; }
+        }
+      `}</style>
+
       {isScanning && (
         <div style={{
           marginTop: '15px',
-          padding: '10px',
+          padding: '12px',
           backgroundColor: '#fff3cd',
           border: '1px solid #ffc107',
           borderRadius: '4px',
           textAlign: 'center'
         }}>
-          📸 Scanning... Hold barcode in view
+          <p style={{ margin: 0, fontWeight: 'bold', fontSize: '14px' }}>
+            📸 Hold barcode 15-20cm from camera
+          </p>
+          <p style={{ margin: '5px 0 0 0', fontSize: '12px', color: '#666' }}>
+            Keep steady and align barcode within the green box
+          </p>
         </div>
       )}
 
