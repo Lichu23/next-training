@@ -119,8 +119,10 @@
 //   );
 // }
 
-import React, { useState, useEffect, useRef } from "react";
+"use client";
+
 import { Html5Qrcode } from "html5-qrcode";
+import { useEffect, useRef, useState } from "react";
 
 const BarcodeScanner = () => {
   const [scannedCode, setScannedCode] = useState("");
