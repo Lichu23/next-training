@@ -119,9 +119,9 @@
 //     </div>
 //   );
 // }
-import ZXingBarcodeScanner from "@/components/ZXINGBarcodeScanner";
+import ZXingBarcodeScanner from "../components/ZXingBarcodeScanner";
 
-export function App() {
+export default function Page() {
   return (
     <div>
       <ZXingBarcodeScanner />
